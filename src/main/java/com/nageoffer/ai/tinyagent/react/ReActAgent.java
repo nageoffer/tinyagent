@@ -69,7 +69,7 @@ public class ReActAgent {
 
                 Thought: <你的思考过程，分析当前局面，决定下一步做什么>
                 Action: <要调用的工具名，必须是工具列表中的一个>
-                Action Input: <传给工具的参数>
+                Action Input: <传给工具的参数，必须严格按照工具的参数 Schema 输出 JSON 格式。如果工具无需参数，输出 {}>
 
                 工具执行后你会收到 Observation（工具返回的结果），然后继续下一轮思考。
                 重复上述过程，直到你收集到足够的信息来回答用户。
@@ -83,6 +83,7 @@ public class ReActAgent {
                 - 每次只调用一个工具
                 - 必须先 Thought 再 Action，不要跳过思考步骤
                 - Action 必须是工具列表中存在的工具名，不要编造工具
+                - Action Input 必须是合法 JSON，字段名和类型严格匹配工具的参数 Schema
                 """.formatted(toolRegistry.buildToolList());
     }
 
@@ -90,15 +91,34 @@ public class ReActAgent {
         String toolName = "";
         String toolInput = "";
 
-        for (String line : llmOutput.split("\n")) {
+        String[] lines = llmOutput.split("\\R", -1);
+        for (int i = 0; i < lines.length; i++) {
+            String line = lines[i];
             String trimmed = line.trim();
             if (trimmed.startsWith("Action Input:")) {
-                toolInput = trimmed.substring("Action Input:".length()).trim();
+                StringBuilder inputBuilder = new StringBuilder(
+                        trimmed.substring("Action Input:".length()).trim());
+                while (i + 1 < lines.length && !isPromptSection(lines[i + 1].trim())) {
+                    i++;
+                    if (!inputBuilder.isEmpty()) {
+                        inputBuilder.append("\n");
+                    }
+                    inputBuilder.append(lines[i].trim());
+                }
+                toolInput = inputBuilder.toString().trim();
             } else if (trimmed.startsWith("Action:")) {
                 toolName = trimmed.substring("Action:".length()).trim();
             }
         }
         return new Action(toolName, toolInput);
+    }
+
+    private boolean isPromptSection(String line) {
+        return line.startsWith("Thought:")
+                || line.startsWith("Action:")
+                || line.startsWith("Action Input:")
+                || line.startsWith("Observation:")
+                || line.startsWith("Final Answer:");
     }
 
     private String extractFinalAnswer(String llmOutput) {

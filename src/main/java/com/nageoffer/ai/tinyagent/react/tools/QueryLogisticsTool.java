@@ -1,6 +1,7 @@
 package com.nageoffer.ai.tinyagent.react.tools;
 
 import com.nageoffer.ai.tinyagent.react.Tool;
+import com.nageoffer.ai.tinyagent.react.ToolUtils;
 
 public class QueryLogisticsTool implements Tool {
 
@@ -11,13 +12,28 @@ public class QueryLogisticsTool implements Tool {
 
     @Override
     public String description() {
-        return "查询物流轨迹。输入：运单号（如 SF1234567890）。返回：物流公司、当前状态和轨迹列表。";
+        return "根据运单号查询物流轨迹，返回承运商、物流状态和轨迹详情。";
+    }
+
+    @Override
+    public String parameters() {
+        return """
+                {
+                  "type": "object",
+                  "properties": {
+                    "trackingNo": {
+                      "type": "string",
+                      "description": "快递运单号，如 SF1234567890"
+                    }
+                  },
+                  "required": ["trackingNo"]
+                }""";
     }
 
     @Override
     public String invoke(String input) {
-        String trackingNo = input.trim();
-        if ("SF1234567890".equalsIgnoreCase(trackingNo)) {
+        String trackingNo = ToolUtils.extractField(input, "trackingNo");
+        if ("SF1234567890".equals(trackingNo)) {
             return "{\"trackingNo\":\"SF1234567890\",\"carrier\":\"顺丰速运\","
                     + "\"status\":\"已签收\",\"traces\":["
                     + "{\"time\":\"2026-06-20 18:20:00\",\"desc\":\"快件已揽收\"},"
@@ -25,6 +41,6 @@ public class QueryLogisticsTool implements Tool {
                     + "{\"time\":\"2026-06-22 11:35:00\",\"desc\":\"快件已由本人签收\"}"
                     + "]}";
         }
-        return "{\"error\":\"未找到物流轨迹：" + trackingNo + "\"}";
+        return "{\"error\":" + ToolUtils.toJsonString("未找到物流轨迹：" + trackingNo) + "}";
     }
 }

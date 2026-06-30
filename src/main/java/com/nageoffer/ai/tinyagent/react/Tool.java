@@ -6,5 +6,9 @@ public interface Tool {
 
     String description();
 
+    default String parameters() {
+        return "";
+    }
+
     String invoke(String input);
 }

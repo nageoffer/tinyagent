@@ -14,7 +14,7 @@ public class GetCurrentTimeTool implements Tool {
 
     @Override
     public String description() {
-        return "获取当前日期时间。无需输入参数，返回当前时间的 JSON。";
+        return "获取当前日期和时间，无需任何参数。";
     }
 
     @Override

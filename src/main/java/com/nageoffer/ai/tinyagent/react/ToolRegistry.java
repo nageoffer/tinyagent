@@ -32,9 +32,19 @@ public class ToolRegistry {
             sb.append(index++)
                     .append(". ")
                     .append(tool.name())
-                    .append(" - ")
+                    .append("\n   描述：")
                     .append(tool.description())
                     .append("\n");
+
+            String params = tool.parameters();
+            if (params != null && !params.isBlank()) {
+                sb.append("   参数 Schema：")
+                        .append(params.strip())
+                        .append("\n");
+            } else {
+                sb.append("   参数：无\n");
+            }
+            sb.append("\n");
         }
         return sb.toString();
     }
