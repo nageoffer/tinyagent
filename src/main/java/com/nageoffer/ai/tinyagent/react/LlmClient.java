@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import lombok.Getter;
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -12,8 +13,8 @@ import okhttp3.Response;
 import okhttp3.ResponseBody;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 public class LlmClient {
@@ -21,6 +22,7 @@ public class LlmClient {
     private static final MediaType JSON_MEDIA_TYPE = MediaType.get("application/json; charset=utf-8");
 
     private final OkHttpClient httpClient;
+    @Getter
     private final ObjectMapper objectMapper;
     private final String apiUrl;
     private final String apiKey;
@@ -37,44 +39,55 @@ public class LlmClient {
                 .build();
     }
 
-    public String chat(List<Map<String, String>> messages) {
+    public ChatResponse chatWithTools(ArrayNode messages, ArrayNode tools) {
         try {
             ObjectNode requestBody = objectMapper.createObjectNode();
             requestBody.put("model", model);
             requestBody.put("temperature", 0.1);
+            requestBody.set("messages", messages);
+            requestBody.set("tools", tools);
 
-            ArrayNode messagesArray = requestBody.putArray("messages");
-            for (Map<String, String> message : messages) {
-                ObjectNode messageNode = messagesArray.addObject();
-                messageNode.put("role", message.get("role"));
-                messageNode.put("content", message.get("content"));
+            String responseText = doRequestRaw(requestBody);
+            JsonNode responseJson = objectMapper.readTree(responseText);
+            JsonNode choice = responseJson.at("/choices/0");
+            String finishReason = choice.path("finish_reason").asText("");
+
+            JsonNode message = choice.path("message");
+            String content = message.path("content").isNull()
+                    ? null : message.path("content").asText(null);
+
+            List<ToolCallInfo> toolCalls = new ArrayList<>();
+            JsonNode toolCallsNode = message.path("tool_calls");
+            if (toolCallsNode.isArray()) {
+                for (JsonNode tc : toolCallsNode) {
+                    String id = tc.path("id").asText();
+                    String funcName = tc.at("/function/name").asText();
+                    String arguments = tc.at("/function/arguments").asText();
+                    toolCalls.add(new ToolCallInfo(id, funcName, arguments));
+                }
             }
 
-            ArrayNode stopArray = requestBody.putArray("stop");
-            stopArray.add("Observation:");
-
-            Request request = new Request.Builder()
-                    .url(apiUrl)
-                    .addHeader("Authorization", "Bearer " + apiKey)
-                    .post(RequestBody.create(requestBody.toString(), JSON_MEDIA_TYPE))
-                    .build();
-
-            try (Response response = httpClient.newCall(request).execute()) {
-                ResponseBody body = response.body();
-                String responseText = body == null ? "" : body.string();
-                if (!response.isSuccessful()) {
-                    throw new RuntimeException("API 调用失败，状态码：" + response.code() + "，响应：" + responseText);
-                }
-
-                JsonNode responseJson = objectMapper.readTree(responseText);
-                JsonNode contentNode = responseJson.at("/choices/0/message/content");
-                if (contentNode.isMissingNode() || contentNode.isNull()) {
-                    throw new RuntimeException("API 响应中缺少 choices[0].message.content：" + responseText);
-                }
-                return contentNode.asText();
-            }
+            return new ChatResponse(content, toolCalls, finishReason);
         } catch (IOException e) {
             throw new RuntimeException("调用大模型失败：" + e.getMessage(), e);
+        }
+    }
+
+    private String doRequestRaw(ObjectNode requestBody) throws IOException {
+        Request request = new Request.Builder()
+                .url(apiUrl)
+                .addHeader("Authorization", "Bearer " + apiKey)
+                .post(RequestBody.create(requestBody.toString(), JSON_MEDIA_TYPE))
+                .build();
+
+        try (Response response = httpClient.newCall(request).execute()) {
+            ResponseBody body = response.body();
+            String responseText = body == null ? "" : body.string();
+            if (!response.isSuccessful()) {
+                throw new RuntimeException(
+                        "API 调用失败，状态码：" + response.code() + "，响应：" + responseText);
+            }
+            return responseText;
         }
     }
 }

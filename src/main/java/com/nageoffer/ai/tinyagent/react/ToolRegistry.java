@@ -1,5 +1,9 @@
 package com.nageoffer.ai.tinyagent.react;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -25,27 +29,27 @@ public class ToolRegistry {
         return tool.invoke(action.toolInput() == null ? "" : action.toolInput());
     }
 
-    public String buildToolList() {
-        StringBuilder sb = new StringBuilder();
-        int index = 1;
+    public ArrayNode buildToolsJsonArray(ObjectMapper objectMapper) {
+        ArrayNode toolsArray = objectMapper.createArrayNode();
         for (Tool tool : tools.values()) {
-            sb.append(index++)
-                    .append(". ")
-                    .append(tool.name())
-                    .append("\n   描述：")
-                    .append(tool.description())
-                    .append("\n");
+            ObjectNode toolNode = toolsArray.addObject();
+            toolNode.put("type", "function");
+
+            ObjectNode functionNode = toolNode.putObject("function");
+            functionNode.put("name", tool.name());
+            functionNode.put("description", tool.description());
 
             String params = tool.parameters();
             if (params != null && !params.isBlank()) {
-                sb.append("   参数 Schema：")
-                        .append(params.strip())
-                        .append("\n");
+                try {
+                    functionNode.set("parameters", objectMapper.readTree(params));
+                } catch (Exception e) {
+                    functionNode.putObject("parameters").put("type", "object");
+                }
             } else {
-                sb.append("   参数：无\n");
+                functionNode.putObject("parameters").put("type", "object");
             }
-            sb.append("\n");
         }
-        return sb.toString();
+        return toolsArray;
     }
 }
