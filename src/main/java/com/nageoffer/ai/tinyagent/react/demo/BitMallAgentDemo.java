@@ -3,6 +3,8 @@ package com.nageoffer.ai.tinyagent.react.demo;
 import com.nageoffer.ai.tinyagent.react.LlmClient;
 import com.nageoffer.ai.tinyagent.react.ReActAgent;
 import com.nageoffer.ai.tinyagent.react.ToolRegistry;
+import com.nageoffer.ai.tinyagent.react.memory.ChatMemory;
+import com.nageoffer.ai.tinyagent.react.memory.InMemoryChatMemory;
 import com.nageoffer.ai.tinyagent.react.tools.ApplyRefundTool;
 import com.nageoffer.ai.tinyagent.react.tools.GetCurrentTimeTool;
 import com.nageoffer.ai.tinyagent.react.tools.QueryLogisticsTool;
@@ -32,13 +34,16 @@ public class BitMallAgentDemo {
                 setting(dotEnv, "TINYAGENT_MODEL", "deepseek-v4-pro")
         );
 
-        ReActAgent agent = new ReActAgent(llmClient, toolRegistry);
-        String userMessage = "我上周买的扫地机不回充了，修不好我想退。订单号 88231。";
+        ChatMemory memory = new InMemoryChatMemory();
+        ReActAgent agent = new ReActAgent(llmClient, toolRegistry, 10, 8000, memory);
 
-        String answer = agent.run(userMessage);
+        System.out.println("========== 第一轮对话 ==========");
+        String answer1 = agent.run("帮我查一下订单 88231 的物流到哪了");
+        System.out.println("\n[最终结果] " + answer1);
 
-        System.out.println("\n========== 最终结果 ==========");
-        System.out.println(answer);
+        System.out.println("\n\n========== 第二轮对话 ==========");
+        String answer2 = agent.run("那我要退款呢，这个扫地机不回充了");
+        System.out.println("\n[最终结果] " + answer2);
     }
 
     private static Properties loadDotEnv() {

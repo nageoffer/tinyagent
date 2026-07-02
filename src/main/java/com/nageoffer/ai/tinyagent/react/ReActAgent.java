@@ -3,6 +3,8 @@ package com.nageoffer.ai.tinyagent.react;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.nageoffer.ai.tinyagent.react.memory.ChatMemory;
+import com.nageoffer.ai.tinyagent.react.memory.ChatMessage;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -19,18 +21,25 @@ public class ReActAgent {
     private final ObjectMapper objectMapper;
     private final int maxSteps;
     private final int maxTokens;
+    private final ChatMemory chatMemory;
 
     public ReActAgent(LlmClient llmClient, ToolRegistry toolRegistry) {
-        this(llmClient, toolRegistry, DEFAULT_MAX_STEPS, DEFAULT_MAX_TOKENS);
+        this(llmClient, toolRegistry, DEFAULT_MAX_STEPS, DEFAULT_MAX_TOKENS, null);
     }
 
     public ReActAgent(LlmClient llmClient, ToolRegistry toolRegistry,
                       int maxSteps, int maxTokens) {
+        this(llmClient, toolRegistry, maxSteps, maxTokens, null);
+    }
+
+    public ReActAgent(LlmClient llmClient, ToolRegistry toolRegistry,
+                      int maxSteps, int maxTokens, ChatMemory chatMemory) {
         this.llmClient = llmClient;
         this.toolRegistry = toolRegistry;
         this.objectMapper = llmClient.getObjectMapper();
         this.maxSteps = maxSteps;
         this.maxTokens = maxTokens;
+        this.chatMemory = chatMemory;
     }
 
     public String run(String userMessage) {
@@ -41,15 +50,40 @@ public class ReActAgent {
         systemMsg.put("role", "system");
         systemMsg.put("content", systemPrompt);
 
-        ObjectNode userMsg = messages.addObject();
-        userMsg.put("role", "user");
-        userMsg.put("content", userMessage);
-
-        ArrayNode tools = toolRegistry.buildToolsJsonArray(objectMapper);
-
         TokenBudget tokenBudget = new TokenBudget(maxTokens);
         tokenBudget.addMessage(systemPrompt);
-        tokenBudget.addMessage(userMessage);
+
+        if (chatMemory != null) {
+            chatMemory.add(ChatMessage.user(userMessage));
+            for (ChatMessage mem : chatMemory.messages()) {
+                ObjectNode memMsg = messages.addObject();
+                switch (mem.role()) {
+                    case USER -> {
+                        memMsg.put("role", "user");
+                        memMsg.put("content", mem.content());
+                    }
+                    case ASSISTANT -> {
+                        memMsg.put("role", "assistant");
+                        memMsg.put("content", mem.content());
+                    }
+                    case TOOL -> {
+                        memMsg.put("role", "tool");
+                        memMsg.put("tool_call_id", mem.toolCallId());
+                        memMsg.put("content", mem.content());
+                    }
+                    default -> {
+                    }
+                }
+                tokenBudget.addMessage(mem.content());
+            }
+        } else {
+            ObjectNode userMsg = messages.addObject();
+            userMsg.put("role", "user");
+            userMsg.put("content", userMessage);
+            tokenBudget.addMessage(userMessage);
+        }
+
+        ArrayNode tools = toolRegistry.buildToolsJsonArray(objectMapper);
 
         RepeatDetector repeatDetector = new RepeatDetector();
         ProgressDetector progressDetector = new ProgressDetector(3);
@@ -68,6 +102,9 @@ public class ReActAgent {
             if (!response.hasToolCalls()) {
                 String answer = response.content() != null ? response.content() : "";
                 System.out.println("[最终答复] " + answer);
+                if (chatMemory != null) {
+                    chatMemory.add(ChatMessage.assistant(answer));
+                }
                 return answer;
             }
 
@@ -79,12 +116,20 @@ public class ReActAgent {
 
             if (repeatAction == RepeatAction.STOP) {
                 System.out.println("[终止] 提醒后仍重复调用，强制停止");
-                return "抱歉，我在处理您的问题时遇到了困难。请尝试换一种方式描述，或联系人工客服获取帮助。";
+                String stopMsg = "抱歉，我在处理您的问题时遇到了困难。请尝试换一种方式描述，或联系人工客服获取帮助。";
+                if (chatMemory != null) {
+                    chatMemory.add(ChatMessage.assistant(stopMsg));
+                }
+                return stopMsg;
             }
 
             if (progressDetector.isStuck(response.content())) {
                 System.out.println("[终止] 检测到无进展，连续多圈推理内容高度相似");
-                return "抱歉，我在处理您的问题时遇到了困难，无法进一步推进。请尝试换一种方式描述，或联系人工客服获取帮助。";
+                String stuckMsg = "抱歉，我在处理您的问题时遇到了困难，无法进一步推进。请尝试换一种方式描述，或联系人工客服获取帮助。";
+                if (chatMemory != null) {
+                    chatMemory.add(ChatMessage.assistant(stuckMsg));
+                }
+                return stuckMsg;
             }
 
             ObjectNode assistantMsg = messages.addObject();
@@ -105,8 +150,6 @@ public class ReActAgent {
             }
             tokenBudget.addMessage(response.content());
 
-            // 跳过执行仅适用于确定性只读工具（queryOrder、queryLogistics 等）
-            // 副作用工具（如 applyRefund）不能跳过，需用幂等键去重
             if (repeatAction == RepeatAction.WARN) {
                 System.out.println("[提醒] 检测到重复调用，注入提示");
                 String hint = "你已经用相同的参数调用过这个工具，结果不会变化。"
@@ -138,7 +181,11 @@ public class ReActAgent {
         }
 
         System.out.println("[终止] 达到最大步数 " + maxSteps);
-        return "抱歉，我思考了太多步仍未完成任务，请尝试换一种方式描述您的问题。";
+        String maxStepMsg = "抱歉，我思考了太多步仍未完成任务，请尝试换一种方式描述您的问题。";
+        if (chatMemory != null) {
+            chatMemory.add(ChatMessage.assistant(maxStepMsg));
+        }
+        return maxStepMsg;
     }
 
     private String buildSystemPrompt() {
@@ -154,6 +201,7 @@ public class ReActAgent {
                 - 如果用户的问题超出工具能力范围，直接如实告知
                 - 最终回复面向用户，不要暴露工具名、JSON 数据等内部细节
                 - 避免重复调用相同的工具获取相同的信息
+                - 注意对话上下文，用户可能会用代词（如"它""那个""这个订单"）引用之前提到的内容
                 """;
     }
 
