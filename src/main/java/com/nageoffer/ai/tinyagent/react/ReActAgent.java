@@ -58,6 +58,10 @@ public class ReActAgent {
             for (ChatMessage mem : chatMemory.messages()) {
                 ObjectNode memMsg = messages.addObject();
                 switch (mem.role()) {
+                    case SYSTEM -> {
+                        memMsg.put("role", "system");
+                        memMsg.put("content", mem.content());
+                    }
                     case USER -> {
                         memMsg.put("role", "user");
                         memMsg.put("content", mem.content());
@@ -70,8 +74,6 @@ public class ReActAgent {
                         memMsg.put("role", "tool");
                         memMsg.put("tool_call_id", mem.toolCallId());
                         memMsg.put("content", mem.content());
-                    }
-                    default -> {
                     }
                 }
                 tokenBudget.addMessage(mem.content());
