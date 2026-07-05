@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.nageoffer.ai.tinyagent.react.memory.ChatMemory;
 import com.nageoffer.ai.tinyagent.react.memory.ChatMessage;
+import com.nageoffer.ai.tinyagent.react.memory.LongTermMemoryRetriever;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -22,27 +23,39 @@ public class ReActAgent {
     private final int maxSteps;
     private final int maxTokens;
     private final ChatMemory chatMemory;
+    private final LongTermMemoryRetriever memoryRetriever;
 
     public ReActAgent(LlmClient llmClient, ToolRegistry toolRegistry) {
-        this(llmClient, toolRegistry, DEFAULT_MAX_STEPS, DEFAULT_MAX_TOKENS, null);
+        this(llmClient, toolRegistry, DEFAULT_MAX_STEPS, DEFAULT_MAX_TOKENS, null, null);
     }
 
     public ReActAgent(LlmClient llmClient, ToolRegistry toolRegistry,
                       int maxSteps, int maxTokens) {
-        this(llmClient, toolRegistry, maxSteps, maxTokens, null);
+        this(llmClient, toolRegistry, maxSteps, maxTokens, null, null);
     }
 
     public ReActAgent(LlmClient llmClient, ToolRegistry toolRegistry,
                       int maxSteps, int maxTokens, ChatMemory chatMemory) {
+        this(llmClient, toolRegistry, maxSteps, maxTokens, chatMemory, null);
+    }
+
+    public ReActAgent(LlmClient llmClient, ToolRegistry toolRegistry,
+                      int maxSteps, int maxTokens, ChatMemory chatMemory,
+                      LongTermMemoryRetriever memoryRetriever) {
         this.llmClient = llmClient;
         this.toolRegistry = toolRegistry;
         this.objectMapper = llmClient.getObjectMapper();
         this.maxSteps = maxSteps;
         this.maxTokens = maxTokens;
         this.chatMemory = chatMemory;
+        this.memoryRetriever = memoryRetriever;
     }
 
     public String run(String userMessage) {
+        return run(userMessage, null);
+    }
+
+    public String run(String userMessage, String userId) {
         ArrayNode messages = objectMapper.createArrayNode();
 
         String systemPrompt = buildSystemPrompt();
@@ -52,6 +65,17 @@ public class ReActAgent {
 
         TokenBudget tokenBudget = new TokenBudget(maxTokens);
         tokenBudget.addMessage(systemPrompt);
+
+        if (memoryRetriever != null && userId != null) {
+            String memoryContext = memoryRetriever.buildMemoryContext(userId, userMessage);
+            if (!memoryContext.isBlank()) {
+                ObjectNode memoryMsg = messages.addObject();
+                memoryMsg.put("role", "system");
+                memoryMsg.put("content",
+                        "以下是关于当前用户的历史信息，供你参考：\n" + memoryContext);
+                tokenBudget.addMessage(memoryContext);
+            }
+        }
 
         if (chatMemory != null) {
             chatMemory.add(ChatMessage.user(userMessage));
