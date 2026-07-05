@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
+import java.util.Collection;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -29,9 +31,13 @@ public class ToolRegistry {
         return tool.invoke(action.toolInput() == null ? "" : action.toolInput());
     }
 
-    public ArrayNode buildToolsJsonArray(ObjectMapper objectMapper) {
+    public Collection<Tool> getTools() {
+        return Collections.unmodifiableCollection(tools.values());
+    }
+
+    public ArrayNode buildToolsJsonArray(ObjectMapper objectMapper, Collection<Tool> toolSubset) {
         ArrayNode toolsArray = objectMapper.createArrayNode();
-        for (Tool tool : tools.values()) {
+        for (Tool tool : toolSubset) {
             ObjectNode toolNode = toolsArray.addObject();
             toolNode.put("type", "function");
 

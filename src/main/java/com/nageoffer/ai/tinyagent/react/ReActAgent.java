@@ -3,11 +3,15 @@ package com.nageoffer.ai.tinyagent.react;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.nageoffer.ai.tinyagent.react.context.ContextBudget;
+import com.nageoffer.ai.tinyagent.react.context.ObservationFolder;
+import com.nageoffer.ai.tinyagent.react.context.ToolFilter;
 import com.nageoffer.ai.tinyagent.react.memory.ChatMemory;
 import com.nageoffer.ai.tinyagent.react.memory.ChatMessage;
 import com.nageoffer.ai.tinyagent.react.memory.LongTermMemoryRetriever;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -24,24 +28,37 @@ public class ReActAgent {
     private final int maxTokens;
     private final ChatMemory chatMemory;
     private final LongTermMemoryRetriever memoryRetriever;
+    private final ToolFilter toolFilter;
+    private final ObservationFolder observationFolder;
 
     public ReActAgent(LlmClient llmClient, ToolRegistry toolRegistry) {
-        this(llmClient, toolRegistry, DEFAULT_MAX_STEPS, DEFAULT_MAX_TOKENS, null, null);
+        this(llmClient, toolRegistry, DEFAULT_MAX_STEPS, DEFAULT_MAX_TOKENS,
+                null, null, null, null);
     }
 
     public ReActAgent(LlmClient llmClient, ToolRegistry toolRegistry,
                       int maxSteps, int maxTokens) {
-        this(llmClient, toolRegistry, maxSteps, maxTokens, null, null);
+        this(llmClient, toolRegistry, maxSteps, maxTokens,
+                null, null, null, null);
     }
 
     public ReActAgent(LlmClient llmClient, ToolRegistry toolRegistry,
                       int maxSteps, int maxTokens, ChatMemory chatMemory) {
-        this(llmClient, toolRegistry, maxSteps, maxTokens, chatMemory, null);
+        this(llmClient, toolRegistry, maxSteps, maxTokens,
+                chatMemory, null, null, null);
     }
 
     public ReActAgent(LlmClient llmClient, ToolRegistry toolRegistry,
                       int maxSteps, int maxTokens, ChatMemory chatMemory,
                       LongTermMemoryRetriever memoryRetriever) {
+        this(llmClient, toolRegistry, maxSteps, maxTokens,
+                chatMemory, memoryRetriever, null, null);
+    }
+
+    public ReActAgent(LlmClient llmClient, ToolRegistry toolRegistry,
+                      int maxSteps, int maxTokens, ChatMemory chatMemory,
+                      LongTermMemoryRetriever memoryRetriever,
+                      ToolFilter toolFilter, ObservationFolder observationFolder) {
         this.llmClient = llmClient;
         this.toolRegistry = toolRegistry;
         this.objectMapper = llmClient.getObjectMapper();
@@ -49,6 +66,8 @@ public class ReActAgent {
         this.maxTokens = maxTokens;
         this.chatMemory = chatMemory;
         this.memoryRetriever = memoryRetriever;
+        this.toolFilter = toolFilter;
+        this.observationFolder = observationFolder;
     }
 
     public String run(String userMessage) {
@@ -63,17 +82,20 @@ public class ReActAgent {
         systemMsg.put("role", "system");
         systemMsg.put("content", systemPrompt);
 
-        TokenBudget tokenBudget = new TokenBudget(maxTokens);
-        tokenBudget.addMessage(systemPrompt);
+        ContextBudget budget = new ContextBudget(maxTokens);
+        budget.addSystemPrompt(systemPrompt);
 
         if (memoryRetriever != null && userId != null) {
             String memoryContext = memoryRetriever.buildMemoryContext(userId, userMessage);
             if (!memoryContext.isBlank()) {
-                ObjectNode memoryMsg = messages.addObject();
-                memoryMsg.put("role", "system");
-                memoryMsg.put("content",
-                        "以下是关于当前用户的历史信息，供你参考：\n" + memoryContext);
-                tokenBudget.addMessage(memoryContext);
+                String fullMemory = "以下是关于当前用户的历史信息，供你参考：\n" + memoryContext;
+                if (budget.tryAddMemory(fullMemory)) {
+                    ObjectNode memoryMsg = messages.addObject();
+                    memoryMsg.put("role", "system");
+                    memoryMsg.put("content", fullMemory);
+                } else {
+                    System.out.println("[上下文] 长期记忆超出预算，已跳过");
+                }
             }
         }
 
@@ -100,16 +122,44 @@ public class ReActAgent {
                         memMsg.put("content", mem.content());
                     }
                 }
-                tokenBudget.addMessage(mem.content());
+                budget.addHistory(mem.content());
+            }
+            int historyBudget = budget.getHistoryBudget();
+            if (budget.getHistoryTokens() > historyBudget) {
+                System.out.println("[上下文] 对话历史（" + budget.getHistoryTokens()
+                        + "）超出动态预算（" + historyBudget + "）");
             }
         } else {
             ObjectNode userMsg = messages.addObject();
             userMsg.put("role", "user");
             userMsg.put("content", userMessage);
-            tokenBudget.addMessage(userMessage);
+            budget.addHistory(userMessage);
         }
 
-        ArrayNode tools = toolRegistry.buildToolsJsonArray(objectMapper);
+        Collection<Tool> candidateTools;
+        if (toolFilter != null) {
+            candidateTools = toolFilter.filter(
+                    toolRegistry.getTools(), userMessage);
+            System.out.println("[上下文] 工具筛选：全部 "
+                    + toolRegistry.getTools().size()
+                    + " 个 → 语义匹配 " + candidateTools.size() + " 个");
+        } else {
+            candidateTools = toolRegistry.getTools();
+        }
+
+        List<Tool> budgetedTools = new ArrayList<>();
+        for (Tool tool : candidateTools) {
+            String toolDesc = tool.name() + "：" + tool.description()
+                    + (tool.parameters() != null ? tool.parameters() : "");
+            if (budget.tryAddToolDescription(toolDesc)) {
+                budgetedTools.add(tool);
+            }
+        }
+        if (budgetedTools.size() < candidateTools.size()) {
+            System.out.println("[上下文] 工具描述超出预算裁剪："
+                    + candidateTools.size() + " → " + budgetedTools.size() + " 个");
+        }
+        ArrayNode tools = toolRegistry.buildToolsJsonArray(objectMapper, budgetedTools);
 
         RepeatDetector repeatDetector = new RepeatDetector();
         ProgressDetector progressDetector = new ProgressDetector(3);
@@ -117,9 +167,8 @@ public class ReActAgent {
         for (int step = 1; step <= maxSteps; step++) {
             System.out.println("\n===== 第 " + step + " 圈 =====");
 
-            if (tokenBudget.isExceeded()) {
-                System.out.println("[终止] Token 预算耗尽（约 "
-                        + tokenBudget.getEstimatedTokens() + " Token）");
+            if (budget.isExceeded()) {
+                System.out.println("[终止] Token 预算耗尽（" + budget.getReport() + "）");
                 return "抱歉，本次对话信息量较大，已达到处理上限。请尝试简化问题或分多次咨询。";
             }
 
@@ -131,6 +180,7 @@ public class ReActAgent {
                 if (chatMemory != null) {
                     chatMemory.add(ChatMessage.assistant(answer));
                 }
+                System.out.println("[预算] " + budget.getReport());
                 return answer;
             }
 
@@ -174,7 +224,7 @@ public class ReActAgent {
                 funcNode.put("name", tc.functionName());
                 funcNode.put("arguments", tc.arguments());
             }
-            tokenBudget.addMessage(response.content());
+            budget.addCurrentTurn(response.content());
 
             if (repeatAction == RepeatAction.WARN) {
                 System.out.println("[提醒] 检测到重复调用，注入提示");
@@ -185,7 +235,7 @@ public class ReActAgent {
                     toolMsg.put("role", "tool");
                     toolMsg.put("tool_call_id", tc.id());
                     toolMsg.put("content", hint);
-                    tokenBudget.addMessage(hint);
+                    budget.addCurrentTurn(hint);
                 }
                 continue;
             }
@@ -196,13 +246,23 @@ public class ReActAgent {
 
                 String observation = toolRegistry.execute(
                         new Action(tc.functionName(), tc.arguments()));
+
+                if (observationFolder != null) {
+                    String folded = observationFolder.fold(observation);
+                    if (folded.length() < observation.length()) {
+                        System.out.println("[上下文] Observation 折叠："
+                                + observation.length() + " → " + folded.length() + " 字符");
+                    }
+                    observation = folded;
+                }
+
                 System.out.println("[工具结果] " + observation);
 
                 ObjectNode toolMsg = messages.addObject();
                 toolMsg.put("role", "tool");
                 toolMsg.put("tool_call_id", tc.id());
                 toolMsg.put("content", observation);
-                tokenBudget.addMessage(observation);
+                budget.addCurrentTurn(observation);
             }
         }
 
@@ -220,7 +280,7 @@ public class ReActAgent {
                 订单查询、物流追踪、退款换货等问题。
                 请根据用户的问题，合理选择工具获取真实信息，\
                 然后给出准确、友好的回复。
-                
+
                 注意事项：
                 - 合理选择工具，每次调用后分析结果再决定下一步
                 - 如果工具返回错误，分析原因并尝试换一种方式解决
@@ -264,36 +324,6 @@ public class ReActAgent {
                         .append(tc.arguments()).append(";");
             }
             return sb.toString();
-        }
-    }
-
-    private static class TokenBudget {
-
-        private static final double TOKENS_PER_CHAR = 1.0;
-
-        private final int maxTokens;
-        private int estimatedTokens = 0;
-
-        TokenBudget(int maxTokens) {
-            this.maxTokens = maxTokens;
-        }
-
-        void addMessage(String content) {
-            if (content != null) {
-                estimatedTokens += estimateTokens(content);
-            }
-        }
-
-        boolean isExceeded() {
-            return estimatedTokens >= maxTokens;
-        }
-
-        int getEstimatedTokens() {
-            return estimatedTokens;
-        }
-
-        private int estimateTokens(String text) {
-            return (int) Math.ceil(text.length() * TOKENS_PER_CHAR);
         }
     }
 
