@@ -35,6 +35,10 @@ public class ToolRegistry {
         return Collections.unmodifiableCollection(tools.values());
     }
 
+    public ArrayNode buildToolsJsonArray(ObjectMapper objectMapper) {
+        return buildToolsJsonArray(objectMapper, tools.values());
+    }
+
     public ArrayNode buildToolsJsonArray(ObjectMapper objectMapper, Collection<Tool> toolSubset) {
         ArrayNode toolsArray = objectMapper.createArrayNode();
         for (Tool tool : toolSubset) {
