@@ -1,16 +1,22 @@
 # TinyAgent
 
-TinyAgent 是一个用 Java 实现的极简 ReAct Agent 示例项目。它演示了如何让大模型按照 `Thought -> Action -> Observation -> Final Answer` 的方式完成多轮推理，并在推理过程中调用本地工具。
+TinyAgent 是一个用 Java 实现的轻量级 Agent 教学项目。它以“比特严选智能客服”为示例场景，演示大模型如何通过 Chat Completions `tools/tool_calls` 调用本地工具，并逐步扩展到 ReAct、Plan-and-Execute、会话记忆、长期记忆、上下文工程和 Skill 技能机制。
 
-当前示例场景是“比特严选智能客服”：Agent 可以查询订单、查询物流、检索售后知识库、发起退款申请，以及获取当前时间。
+项目配套文档对应：[nageoffer/ai-handbook](https://github.com/nageoffer/ai-handbook)。
+
+当前示例中的 Agent 可以查询订单、查询物流、检索售后知识库、发起退款申请、获取当前时间，并围绕多轮客服会话进行记忆管理与上下文压缩。
 
 ## 功能特性
 
-- 极简 ReAct 循环：模型输出行动指令，本地工具执行后把结果作为 Observation 回传给模型。
-- 可插拔工具接口：实现 `Tool` 接口并注册到 `ToolRegistry` 即可扩展能力。
-- 兼容 Chat Completions 风格接口：默认配置使用阿里云 DashScope 兼容模式接口，也可以替换为其他兼容接口。
-- 内置电商客服示例工具：订单查询、物流查询、退款申请、知识库检索、当前时间。
-- 带单元测试：覆盖工具调用、缺失工具处理、无工具直答等核心行为。
+- ReAct Agent：基于 `tools/tool_calls` 执行“模型决策 -> 工具调用 -> Observation 回传 -> 最终答复”的循环。
+- Plan-and-Execute：先由 Planner 拆解复杂任务，再逐步执行计划，失败时支持重规划。
+- 可插拔工具系统：实现 `Tool` 接口并注册到 `ToolRegistry`，即可把业务能力暴露给 Agent。
+- Function Calling 参数描述：工具可通过 `parameters()` 提供 JSON Schema，提升模型调用工具的稳定性。
+- Skill 技能机制：用 Markdown + YAML Front Matter 定义有作用域的技能指令和工具子集，支持渐进式工具展现。
+- 短期会话记忆：支持内存记忆、滑动窗口记忆、摘要压缩记忆、混合记忆和 JDBC 持久化记忆。
+- 长期记忆：支持 PostgreSQL KV 记忆、pgvector 向量记忆、用户画像提取和跨会话检索。
+- 上下文工程：包含 Token 预算、工具筛选、Observation 折叠、重复工具调用检测和无进展检测。
+- 电商客服 Mock 工具：内置订单、物流、退款、知识库和时间工具，便于专注学习 Agent 流程。
 
 ## 技术栈
 
@@ -18,9 +24,10 @@ TinyAgent 是一个用 Java 实现的极简 ReAct Agent 示例项目。它演示
 - Spring Boot 4.1.0
 - Maven Wrapper
 - OkHttp
-- Jackson
-- JUnit 5
+- Jackson / Jackson YAML
+- PostgreSQL JDBC / pgvector
 - Lombok
+- JUnit 5
 
 ## 项目结构
 
@@ -36,21 +43,35 @@ TinyAgent 是一个用 Java 实现的极简 ReAct Agent 示例项目。它演示
     │   │   └── react
     │   │       ├── ReActAgent.java
     │   │       ├── LlmClient.java
+    │   │       ├── EmbeddingClient.java
     │   │       ├── Tool.java
     │   │       ├── ToolRegistry.java
-    │   │       ├── demo/BitMallAgentDemo.java
-    │   │       └── tools
-    │   └── resources/application.yaml
+    │   │       ├── context/
+    │   │       ├── demo/
+    │   │       ├── memory/
+    │   │       ├── plan/
+    │   │       ├── skill/
+    │   │       └── tools/
+    │   └── resources
+    │       ├── application.yaml
+    │       ├── schema.sql
+    │       └── skills/
     └── test
 ```
 
-核心类说明：
+核心模块说明：
 
-- `ReActAgent`：执行 ReAct 推理循环，解析模型输出中的 `Action` 和 `Final Answer`。
-- `LlmClient`：调用兼容 Chat Completions 的大模型接口。
-- `Tool`：本地工具接口。
-- `ToolRegistry`：工具注册与调用入口。
-- `BitMallAgentDemo`：命令行演示入口。
+| 模块 | 说明 |
+| --- | --- |
+| `react` | ReAct Agent、LLM 客户端、工具接口、工具注册表等基础能力 |
+| `react.tools` | 比特严选客服场景的本地 Mock 工具 |
+| `react.plan` | Planner、Plan、PlanStep、Plan-and-Execute Agent 和路由器 |
+| `react.memory` | 会话记忆、持久化会话、长期记忆、画像提取和会话标题生成 |
+| `react.context` | 上下文预算、工具筛选、Observation 折叠 |
+| `react.skill` | Skill 加载、注册、适配和执行 |
+| `react.demo` | 不同能力的命令行演示入口 |
+| `resources/skills` | Markdown 技能定义文件 |
+| `resources/schema.sql` | PostgreSQL / pgvector 表结构 |
 
 ## 快速开始
 
@@ -62,7 +83,7 @@ TinyAgent 是一个用 Java 实现的极简 ReAct Agent 示例项目。它演示
 java -version
 ```
 
-如果当前 shell 默认不是 Java 21，请先切换 `JAVA_HOME`，例如 macOS 可执行：
+如果当前 shell 默认不是 Java 21，请先切换 `JAVA_HOME`：
 
 ```bash
 export JAVA_HOME=$(/usr/libexec/java_home -v 21)
@@ -85,81 +106,161 @@ cp .env.example .env
 TINYAGENT_API_URL=https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions
 TINYAGENT_API_KEY=your-api-key
 TINYAGENT_MODEL=deepseek-v4-pro
+TINYAGENT_EMBEDDING_URL=https://dashscope.aliyuncs.com/compatible-mode/v1/embeddings
+TINYAGENT_EMBEDDING_MODEL=text-embedding-v3
 ```
 
 配置项说明：
 
-- `TINYAGENT_API_URL`：兼容 Chat Completions 的接口地址。
-- `TINYAGENT_API_KEY`：接口访问密钥。
-- `TINYAGENT_MODEL`：模型名称。
+| 配置项 | 说明 |
+| --- | --- |
+| `TINYAGENT_API_URL` | 兼容 Chat Completions 的接口地址 |
+| `TINYAGENT_API_KEY` | 大模型接口访问密钥 |
+| `TINYAGENT_MODEL` | Chat 模型名称 |
+| `TINYAGENT_EMBEDDING_URL` | Embedding 接口地址，长期记忆 demo 使用 |
+| `TINYAGENT_EMBEDDING_MODEL` | Embedding 模型名称，长期记忆 demo 使用 |
 
-> 当前 demo 从项目根目录的 `.env` 文件读取配置。
+当前 demo 从项目根目录的 `.env` 文件读取配置，不依赖 Spring 配置注入。
 
-### 3. 运行测试
+### 3. 编译和测试
 
 ```bash
 ./mvnw test
 ```
 
-### 4. 运行客服 Agent demo
+### 4. 运行不依赖数据库的 Demo
 
-推荐直接在 IDE 中运行：
+Plan-and-Execute 示例：
 
-```text
-src/main/java/com/nageoffer/ai/tinyagent/react/demo/BitMallAgentDemo.java
+```bash
+./mvnw -q -DskipTests compile exec:java \
+  -Dexec.mainClass=com.nageoffer.ai.tinyagent.react.demo.PlanAndExecuteDemo
 ```
 
-也可以使用 Maven 运行 main 方法：
+Skill 技能示例：
+
+```bash
+./mvnw -q -DskipTests compile exec:java \
+  -Dexec.mainClass=com.nageoffer.ai.tinyagent.react.demo.SkillDemo
+```
+
+### 5. 运行数据库相关 Demo
+
+`BitMallAgentDemo`、`LongTermMemoryDemo` 和 `ContextEngineeringDemo` 使用 PostgreSQL 持久化会话或长期记忆。运行前需要准备 PostgreSQL，并安装 pgvector 扩展。
+
+在 `.env` 中补充数据库配置：
+
+```properties
+TINYAGENT_DB_URL=jdbc:postgresql://localhost:5432/tinyagent
+TINYAGENT_DB_USER=postgres
+TINYAGENT_DB_PASSWORD=postgres
+```
+
+初始化表结构：
+
+```bash
+createdb tinyagent
+psql -d tinyagent -f src/main/resources/schema.sql
+```
+
+运行基础客服会话 demo：
 
 ```bash
 ./mvnw -q -DskipTests compile exec:java \
   -Dexec.mainClass=com.nageoffer.ai.tinyagent.react.demo.BitMallAgentDemo
 ```
 
-默认用户问题是：
+运行长期记忆 demo：
 
-```text
-我上周买的扫地机不回充了，修不好我想退。订单号 88231。
+```bash
+./mvnw -q -DskipTests compile exec:java \
+  -Dexec.mainClass=com.nageoffer.ai.tinyagent.react.demo.LongTermMemoryDemo
 ```
 
-运行后可以在控制台看到每一轮推理、工具调用和最终答复。示例订单 `88231` 会关联到运单号 `SF1234567890`。
+运行上下文工程 demo：
+
+```bash
+./mvnw -q -DskipTests compile exec:java \
+  -Dexec.mainClass=com.nageoffer.ai.tinyagent.react.demo.ContextEngineeringDemo
+```
 
 ## 工作原理
 
-`ReActAgent` 会先构造系统提示词，把所有已注册工具的名称和描述告诉模型。模型必须按下面格式输出：
+### ReAct Agent
 
-```text
-Thought: <思考过程>
-Action: <工具名>
-Action Input: <工具入参>
+`ReActAgent` 会构造系统提示词、会话历史、长期记忆和工具列表，然后调用 `LlmClient.chatWithTools()`。当模型返回 `tool_calls` 时，Agent 通过 `ToolRegistry` 执行对应工具，并把结果作为 `tool` 消息回传给模型；当模型不再返回工具调用时，当前内容就是最终答复。
+
+执行过程中还会处理：
+
+- `ContextBudget`：估算并限制系统提示词、长期记忆、工具描述、历史消息和当前轮次的上下文占用。
+- `ToolFilter`：根据用户问题筛选候选工具，减少一次性暴露给模型的工具数量。
+- `ObservationFolder`：对过长工具结果做 JSON 摘要或截断。
+- 重复调用检测：发现同参数重复调用时先提醒模型，仍重复则终止。
+- 无进展检测：连续多轮推理内容高度相似时终止。
+
+### Plan-and-Execute
+
+`PlanAndExecuteAgent` 面向复杂任务。它先使用 `Planner` 把用户问题拆成 JSON 计划，每一步包含 `stepId`、`description` 和可选的 `toolHint`。执行器按步骤运行，每一步最多进行有限轮工具调用；如果步骤失败，会在 `maxReplanCount` 范围内根据已完成结果重新规划剩余步骤。
+
+### Memory
+
+项目内置多种会话记忆实现：
+
+| 实现 | 说明 |
+| --- | --- |
+| `InMemoryChatMemory` | 简单内存保存，进程结束即丢失 |
+| `SlidingWindowChatMemory` | 只保留最近 N 条消息 |
+| `SummaryChatMemory` | 超过阈值后调用大模型压缩旧对话 |
+| `HybridChatMemory` | 保留摘要 + 最近消息 |
+| `JdbcChatMemory` | 把完整会话写入 PostgreSQL |
+| `PersistentHybridChatMemory` | PostgreSQL 持久化 + 内存侧摘要压缩 |
+
+长期记忆由 `PgKeyValueLongTermMemory` 和 `PgVectorLongTermMemory` 组成。会话结束后，`UserProfileExtractor` 可从对话中提取用户画像和交互记录；下一次会话开始时，`LongTermMemoryRetriever` 会把相关记忆注入上下文。
+
+### Skill
+
+Skill 用 Markdown 文件定义一个有作用域的执行上下文。文件由 YAML Front Matter 和 Markdown 指令正文组成，例如：
+
+```yaml
+---
+name: processRefund
+description: 退款处理技能
+tools:
+  - queryOrder
+  - applyRefund
+parameters:
+  type: object
+  properties:
+    orderId:
+      type: string
+    reason:
+      type: string
+  required:
+    - orderId
+    - reason
+---
 ```
 
-Agent 解析到 `Action` 后，通过 `ToolRegistry` 执行对应工具，并把工具返回值追加为：
+`SkillRegistry` 会扫描 `src/main/resources/skills/*.md`，把每个 Skill 注册成主 Agent 可调用的工具；`SkillExecutor` 在技能内部只暴露该技能声明的工具子集。
 
-```text
-Observation: <工具结果>
-```
+当前内置 Skill：
 
-当模型认为信息足够时，输出：
-
-```text
-Thought: <总结>
-Final Answer: <最终答复>
-```
-
-Agent 解析 `Final Answer` 后结束本次任务。
+| Skill | 作用 | 内部工具 |
+| --- | --- | --- |
+| `inquireOrderStatus` | 查询订单详情，并在已发货时继续查询物流 | `queryOrder`、`queryLogistics` |
+| `processRefund` | 查询订单状态，验证退款条件并提交退款申请 | `queryOrder`、`applyRefund` |
 
 ## 内置工具
 
-| 工具名 | 作用 | 示例输入 |
+| 工具名 | 作用 | 关键参数 |
 | --- | --- | --- |
-| `queryOrder` | 查询订单详情 | `88231` |
-| `queryLogistics` | 查询物流轨迹 | `SF1234567890` |
-| `applyRefund` | 发起退款申请 | `{"orderId":"88231","reason":"不想要了"}` |
-| `searchKnowledge` | 检索售后知识库 | `七天无理由退货` |
-| `getCurrentTime` | 获取当前时间 | 空 |
+| `queryOrder` | 查询订单详情 | `orderId` |
+| `queryLogistics` | 查询物流轨迹 | `trackingNo` |
+| `applyRefund` | 发起退款申请 | `orderId`、`reason` |
+| `searchKnowledge` | 检索售后政策、常见问题或产品信息 | `query` |
+| `getCurrentTime` | 获取当前时间 | 无 |
 
-这些工具目前使用本地模拟数据，适合用于学习 Agent 调用链路。接入真实业务时，可以在工具实现中调用数据库、HTTP 服务、RPC 服务或其他内部系统。
+这些工具目前使用本地 Mock 数据，适合学习 Agent 调用链路。接入真实业务时，可以在工具实现中调用数据库、HTTP 服务、RPC 服务或其他内部系统。
 
 ## 扩展工具
 
@@ -177,33 +278,56 @@ public class QueryCouponTool implements Tool {
 
     @Override
     public String description() {
-        return "查询用户优惠券。输入：用户 ID。返回：可用优惠券列表。";
+        return "查询用户优惠券，返回可用优惠券列表。";
+    }
+
+    @Override
+    public String parameters() {
+        return """
+                {
+                  "type": "object",
+                  "properties": {
+                    "userId": {
+                      "type": "string",
+                      "description": "用户 ID"
+                    }
+                  },
+                  "required": ["userId"]
+                }""";
     }
 
     @Override
     public String invoke(String input) {
+        String userId = ToolUtils.extractRequiredField(input, "userId");
+        if (userId.isBlank()) {
+            return ToolUtils.missingRequiredField("userId");
+        }
         return "{\"coupons\":[]}";
     }
 }
 ```
 
-2. 在 `ToolRegistry` 中注册工具。
+2. 注册工具。
 
 ```java
 ToolRegistry toolRegistry = new ToolRegistry();
 toolRegistry.register(new QueryCouponTool());
 ```
 
-3. 确保 `description()` 写清楚输入格式和返回内容。Agent 会把工具描述直接放进系统提示词，描述越准确，模型越容易正确调用。
+3. 写清楚 `description()` 和 `parameters()`。Agent 会把它们发送给模型，描述越明确，模型越容易稳定调用。
+
+## 扩展 Skill
+
+在 `src/main/resources/skills` 下新增 `.md` 文件即可。建议每个 Skill 只封装一个高频业务流程，并只声明该流程需要的工具，避免技能内部上下文过宽。
 
 ## 注意事项
 
-- 当前版本是教学和 demo 项目，内置工具返回的是模拟数据。
-- `BitMallAgentDemo` 是命令行入口；`TinyagentApplication` 目前只启动 Spring Boot 应用上下文，没有暴露 HTTP 接口。
-- `ReActAgent` 最多执行 10 轮推理，超过后会返回失败提示。
-- `Action` 解析基于固定文本格式，请确保模型输出遵循提示词中的格式。
+- 当前项目是教学和 demo 项目，内置业务工具返回的是 Mock 数据。
+- `TinyagentApplication` 目前只启动 Spring Boot 应用上下文，没有暴露 HTTP 接口。
 - `.env` 不应提交到代码仓库，请只提交 `.env.example`。
+- 数据库相关 demo 需要先初始化 `src/main/resources/schema.sql`。
+- 长期记忆和上下文工程 demo 依赖 Embedding 接口与 pgvector。
 
 ## License
 
-暂无。
+Apache License 2.0
