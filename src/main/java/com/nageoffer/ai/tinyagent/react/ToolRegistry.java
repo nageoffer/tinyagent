@@ -31,6 +31,10 @@ public class ToolRegistry {
         return tool.invoke(action.toolInput() == null ? "" : action.toolInput());
     }
 
+    public Tool getTool(String name) {
+        return tools.get(name);
+    }
+
     public Collection<Tool> getTools() {
         return Collections.unmodifiableCollection(tools.values());
     }

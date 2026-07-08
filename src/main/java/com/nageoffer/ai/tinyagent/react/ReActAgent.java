@@ -13,7 +13,9 @@ import com.nageoffer.ai.tinyagent.react.memory.LongTermMemoryRetriever;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 public class ReActAgent {
@@ -161,6 +163,8 @@ public class ReActAgent {
         }
         ArrayNode tools = toolRegistry.buildToolsJsonArray(objectMapper, budgetedTools);
 
+        Map<String, Tool> dynamicToolMap = new LinkedHashMap<>();
+
         RepeatDetector repeatDetector = new RepeatDetector();
         ProgressDetector progressDetector = new ProgressDetector(3);
 
@@ -244,8 +248,13 @@ public class ReActAgent {
                 System.out.println("[工具调用] " + tc.functionName()
                         + "(" + tc.arguments() + ")");
 
-                String observation = toolRegistry.execute(
-                        new Action(tc.functionName(), tc.arguments()));
+                Tool targetTool = toolRegistry.getTool(tc.functionName());
+                if (targetTool == null) {
+                    targetTool = dynamicToolMap.get(tc.functionName());
+                }
+                String observation = targetTool != null
+                        ? targetTool.invoke(tc.arguments() == null ? "" : tc.arguments())
+                        : "{\"error\":\"未找到工具：" + tc.functionName() + "\"}";
 
                 if (observationFolder != null) {
                     String folded = observationFolder.fold(observation);
@@ -263,6 +272,26 @@ public class ReActAgent {
                 toolMsg.put("tool_call_id", tc.id());
                 toolMsg.put("content", observation);
                 budget.addCurrentTurn(observation);
+
+                if (targetTool instanceof DynamicToolProvider provider) {
+                    List<Tool> newTools = provider.dynamicTools();
+                    if (!newTools.isEmpty()) {
+                        Set<String> existingNames = new HashSet<>();
+                        for (Tool t : budgetedTools) {
+                            existingNames.add(t.name());
+                        }
+                        for (Tool newTool : newTools) {
+                            dynamicToolMap.put(newTool.name(), newTool);
+                            if (existingNames.add(newTool.name())) {
+                                budgetedTools.add(newTool);
+                            }
+                        }
+                        tools = toolRegistry.buildToolsJsonArray(objectMapper, budgetedTools);
+                        System.out.println("[动态工具] 解锁 " + newTools.size()
+                                + " 个技能专属工具："
+                                + newTools.stream().map(Tool::name).toList());
+                    }
+                }
             }
         }
 
