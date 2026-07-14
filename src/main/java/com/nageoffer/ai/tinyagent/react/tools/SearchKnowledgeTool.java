@@ -49,8 +49,33 @@ public class SearchKnowledgeTool implements Tool {
         if (lowerQuery.contains("耳机")) {
             return "{\"query\":" + ToolUtils.toJsonString(query) + ","
                     + "\"matched\":\"耳机产品列表\","
-                    + "\"content\":\"比特 AirX 真无线耳机（¥399）：主动降噪，30 小时续航；"
-                    + "比特 BandPro 头戴式耳机（¥699）：Hi-Res 认证，可折叠设计。\"}";
+                    + "\"content\":\"比特 AirX 真无线耳机（¥399）：主动降噪，30 小时续航，"
+                    + "蓝牙 5.3，IPX4 防水，适合运动和通勤；"
+                    + "比特 BandPro 头戴式耳机（¥699）：Hi-Res 认证，可折叠设计，"
+                    + "混合主动降噪 + 通透模式，40 小时续航，适合长时间音乐欣赏和办公。\"}";
+        }
+
+        if (lowerQuery.contains("手表") || lowerQuery.contains("穿戴")) {
+            return "{\"query\":" + ToolUtils.toJsonString(query) + ","
+                    + "\"matched\":\"智能穿戴产品列表\","
+                    + "\"content\":\"比特 WatchFit 智能手表（¥599）：1.82 英寸 AMOLED，"
+                    + "续航 14 天，5ATM 防水，心率血氧监测，100+ 运动模式，NFC 公交支付。\"}";
+        }
+
+        if (lowerQuery.contains("手机")) {
+            return "{\"query\":" + ToolUtils.toJsonString(query) + ","
+                    + "\"matched\":\"手机产品列表\","
+                    + "\"content\":\"比特 Phone S1 手机（¥1999）：6.7 英寸 AMOLED，"
+                    + "骁龙 7 Gen3，12GB+256GB，5000mAh，120Hz 刷新率，NFC，红外遥控。\"}";
+        }
+
+        if (lowerQuery.contains("搭配") || lowerQuery.contains("套装") || lowerQuery.contains("生态")
+                || lowerQuery.contains("组合")) {
+            return "{\"query\":" + ToolUtils.toJsonString(query) + ","
+                    + "\"matched\":\"IoT 生态搭配指南\","
+                    + "\"content\":\"比特严选 IoT 生态支持手机、手表、耳机、音箱四大品类互联。"
+                    + "手机作为控制中枢，手表同步健康数据，耳机无缝切换连接，音箱做语音控制入口。"
+                    + "推荐搭配方案请使用 recommendBundle 工具获取详细组合和优惠价。\"}";
         }
 
         return "{\"query\":" + ToolUtils.toJsonString(query) + ","
