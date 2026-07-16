@@ -31,3 +31,11 @@ CREATE TABLE IF NOT EXISTS memory_entry (
 );
 
 CREATE INDEX IF NOT EXISTS idx_memory_entry_user_id ON memory_entry(user_id);
+
+CREATE TABLE IF NOT EXISTS knowledge_chunk (
+    id         BIGSERIAL    PRIMARY KEY,
+    source     VARCHAR(256) NOT NULL,
+    content    TEXT         NOT NULL,
+    embedding  vector(1024),
+    created_at TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP
+);

@@ -19,7 +19,7 @@ public class ContextBudget {
     private int currentTurnTokens = 0;
 
     public ContextBudget(int totalBudget) {
-        this(totalBudget, 800, 1000, 2000);
+        this(totalBudget, 800, 2000, 2000);
     }
 
     public ContextBudget(int totalBudget, int memoryLimit,

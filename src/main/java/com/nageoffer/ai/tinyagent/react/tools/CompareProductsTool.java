@@ -88,13 +88,13 @@ public class CompareProductsTool implements Tool {
         String specB = fuzzyMatch(nameB);
 
         if (specA == null && specB == null) {
-            return "{\"error\":\"未找到商品：" + nameA + " 和 " + nameB + "\"}";
+            return "{\"error\":" + ToolUtils.toJsonString("未找到商品：" + nameA + " 和 " + nameB) + "}";
         }
         if (specA == null) {
-            return "{\"error\":\"未找到商品：" + nameA + "\",\"productB\":" + specB + "}";
+            return "{\"error\":" + ToolUtils.toJsonString("未找到商品：" + nameA) + ",\"productB\":" + specB + "}";
         }
         if (specB == null) {
-            return "{\"error\":\"未找到商品：" + nameB + "\",\"productA\":" + specA + "}";
+            return "{\"error\":" + ToolUtils.toJsonString("未找到商品：" + nameB) + ",\"productA\":" + specA + "}";
         }
 
         return "{\"productA\":" + specA + ",\"productB\":" + specB + "}";
