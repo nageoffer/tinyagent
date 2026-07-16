@@ -57,6 +57,7 @@ public class Planner {
                 %s
                 请根据已完成步骤的结果和失败情况，重新规划剩余步骤。
                 已完成的步骤不需要重复，只规划接下来要做的事。
+                重要：如果某个步骤因为工具返回了无效数据而失败，不要用相同工具和相同参数重试——改为规划如何处理失败（如向用户说明情况、提供替代建议）。
                 步骤编号从 %d 开始继续编号。
                 """.formatted(
                 goal,
@@ -74,7 +75,10 @@ public class Planner {
 
         List<PlanStep> merged = new ArrayList<>();
         for (PlanStep step : currentPlan.getSteps()) {
-            if (step.getStatus() == PlanStepStatus.COMPLETED) {
+            // 已完成步骤保留结果供后续综合；已失败步骤也要保留——失败原因得透传给后面的综合步骤
+            // 否则重规划出的那个"如实告知用户查询失败"的综合步骤拿不到失败上下文，只能对着空结果凭空编，反过来又被反思打回
+            if (step.getStatus() == PlanStepStatus.COMPLETED
+                    || step.getStatus() == PlanStepStatus.FAILED) {
                 merged.add(step);
             }
         }

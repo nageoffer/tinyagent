@@ -39,6 +39,11 @@ public class QueryOrderTool implements Tool {
                  + "\"signTime\":\"2026-06-22\",\"status\":\"已签收\","
                  + "\"trackingNo\":\"SF1234567890\"}";
         }
+        // 99999 模拟一个信息还在同步的订单：不报错，返回一个字段齐全却没真正回答"到了没"的占位壳
+        if ("99999".equals(orderId)) {
+            return "{\"orderId\":\"99999\",\"status\":\"查询中\","
+                 + "\"remark\":\"该订单信息正在同步，请稍后再试\"}";
+        }
         return "{\"error\":" + ToolUtils.toJsonString("订单不存在：" + orderId) + "}";
     }
 }
